@@ -56,12 +56,12 @@ if (!$user_info || empty($user_info['categoria'])) {
 
 // Mapear códigos para nomes completos das categorias do usuário
 $mapa_categorias = [
-    'comunidade_geral' => 'Comunidade em Geral',
-    'professores_acao' => 'Professores em Ação',
-    'ensino_fundamental' => 'Ensino Fundamental',
+    'anos_finais_ef' => 'Anos Finais do Ensino Fundamental',
     'ensino_medio' => 'Ensino Médio',
-    'graduandos_matematica' => 'Graduandos em Matemática',
-    'povos_originarios' => 'Povos Originários'
+    'grad_mat_afins' => 'Graduandos em Matemática ou áreas afins',
+    'prof_acao' => 'Professores em Ação',
+    'povos_orig_trad' => 'Povos Originários e Tradicionais',
+    'com_geral' => 'Comunidade em Geral',
 ]; //
 
 $categorias_convertidas = [];
@@ -96,7 +96,7 @@ if ($_SESSION['avaliacoes_restantes'] > 0) { // Só busca vídeos se o avaliador
             OR
             (
                 v.status = 'reavaliar'
-                AND (SELECT COUNT(*) FROM avaliacoes a WHERE a.id_video = v.id) < 4
+                AND (SELECT COUNT(*) FROM avaliacoes a WHERE a.id_video = v.id) < 3
             )
         )
         AND v.categoria IN ($placeholders_sql)
@@ -132,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['avaliar'])) {
     $stmt_contagem_post->execute([':user_id' => $id_user]);
     $avaliacoes_realizadas_post = $stmt_contagem_post->fetchColumn();
 
-    if ($avaliacoes_realizadas_post >= $limite_global_avaliacoes_post) {
+    if ($avaliacoes_realizadas_post >= $limite_global_avaliacoes_post && $limite_global_avaliacoes_post != 0) {
         $_SESSION['error'] = "Você atingiu o limite de " . htmlspecialchars($limite_global_avaliacoes_post) . " avaliações e não pode submeter novas avaliações.";
         // Redireciona de volta para a página do avaliador (index.php ou dashboard.php dependendo da sua estrutura)
         // O action do seu formulário é "dashboard.php", então vamos usar isso.
@@ -206,46 +206,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['avaliar'])) {
         $stmt_info_video->execute([':id_video' => $id_video]);
         $video_info_atual = $stmt_info_video->fetch(PDO::FETCH_ASSOC);
 
-        $status_video_antes_desta_logica = $video_info_atual['status']; // Status que o vídeo TINHA
+        $status_video_antes_desta_logica = $video_info_atual['status'];
         $num_avaliacoes_agora = $video_info_atual['num_avaliacoes'];
-        
-        $status_final_a_definir_no_video = null; // O novo status que o vídeo terá
+        $status_final_a_definir_no_video = null;
+        $_SESSION['info'] = ''; // Limpar mensagem de info
 
-        // 3. Lógica de decisão
+        // ESTA É A LÓGICA DE DECISÃO CORRETA E COMPLETA
         if ($status_video_antes_desta_logica === 'reavaliar') {
-            // 3.1. O vídeo JÁ ESTAVA em reavaliação. Esta é uma das 2 novas avaliações.
-            if ($num_avaliacoes_agora == 4) { // É a 2ª das novas avaliações (total de 4)
-                // Pegue as DUAS ÚLTIMAS avaliações (as duas novas)
-                $stmt_novas_avaliacoes = $pdo->prepare(
-                    "SELECT parecer FROM avaliacoes WHERE id_video = :id_video ORDER BY data_avaliacao DESC LIMIT 2"
-                );
-                $stmt_novas_avaliacoes->execute([':id_video' => $id_video]);
-                $ultimas_duas_novas_avaliacoes = $stmt_novas_avaliacoes->fetchAll(PDO::FETCH_COLUMN);
+            // Vídeo JÁ ESTAVA em 'reavaliar'. A avaliação atual é a 3ª.
+            if ($num_avaliacoes_agora == 3) {
+                $terceiro_parecer = $avaliacao['parecer']; // Parecer da avaliação atual (a 3ª)
 
-                if (count($ultimas_duas_novas_avaliacoes) == 2) {
-                    $p1_norm = (in_array($ultimas_duas_novas_avaliacoes[0], ['aprovado', 'aprovado_classificado'])) ? 'aprovado_geral' : (($ultimas_duas_novas_avaliacoes[0] === 'reprovado') ? 'reprovado_geral' : 'outro');
-                    $p2_norm = (in_array($ultimas_duas_novas_avaliacoes[1], ['aprovado', 'aprovado_classificado'])) ? 'aprovado_geral' : (($ultimas_duas_novas_avaliacoes[1] === 'reprovado') ? 'reprovado_geral' : 'outro');
-
-                    if ($p1_norm === 'aprovado_geral' && $p2_norm === 'aprovado_geral') {
-                        $status_final_a_definir_no_video = 'aprovado';
-                        $_SESSION['info'] = "Reavaliação concluída. Vídeo APROVADO.";
-                    } elseif ($p1_norm === 'reprovado_geral' && $p2_norm === 'reprovado_geral') {
-                        $status_final_a_definir_no_video = 'reprovado';
-                        $_SESSION['info'] = "Reavaliação concluída. Vídeo REPROVADO.";
-                    } else {
-                        $status_final_a_definir_no_video = 'correcao'; 
-                        $_SESSION['info'] = "Reavaliação com divergência/correção. Enviado para análise administrativa.";
-                    }
+                if ($terceiro_parecer === 'aprovado' || $terceiro_parecer === 'aprovado_classificado') {
+                    $status_final_a_definir_no_video = 'aprovado';
+                    $_SESSION['info'] = "Reavaliação (3º parecer) concluída. Vídeo APROVADO.";
+                } elseif ($terceiro_parecer === 'reprovado') {
+                    $status_final_a_definir_no_video = 'reprovado';
+                    $_SESSION['info'] = "Reavaliação (3º parecer) concluída. Vídeo REPROVADO.";
+                } elseif ($terceiro_parecer === 'correcao') {
+                    $status_final_a_definir_no_video = 'correcao';
+                    $_SESSION['info'] = "Reavaliação (3º parecer) concluída. Vídeo enviado para CORREÇÃO.";
+                } else {
+                    $status_final_a_definir_no_video = 'correcao'; // Fallback
+                    $_SESSION['info'] = "Reavaliação (3º parecer) com parecer não padrão (".htmlspecialchars($terceiro_parecer)."). Enviado para análise administrativa.";
                 }
-            } elseif ($num_avaliacoes_agora == 3) { // É a 1ª das novas avaliações (total de 3)
-                 $_SESSION['info'] = "1ª avaliação da reavaliação registrada. Aguardando a 2ª.";
-                 // Não muda o status 'reavaliar' ainda.
-            } else {
-                // Algo inesperado se um vídeo 'reavaliar' não tiver 3 ou 4 avaliações após uma nova.
-                // Pode ser a 5a, 6a etc se a lógica de < 4 na busca de vídeos falhar ou for diferente.
             }
-        } elseif ($num_avaliacoes_agora >= 2) { // 3.2. O vídeo NÃO estava em 'reavaliar' e tem agora 2 ou mais avaliações.
-                                               //      Verifica divergência inicial ou consenso.
+            // Não são necessárias outras condições para $num_avaliacoes_agora aqui,
+            // pois a query SQL para selecionar vídeos 'reavaliar' agora limita a < 3 avaliações.
+        } elseif ($num_avaliacoes_agora >= 2) {
+            // Vídeo NÃO estava em 'reavaliar' e agora tem 2 ou mais avaliações (normalmente, exatamente 2 neste ponto).
+            // Verifica divergência inicial ou consenso entre as duas primeiras avaliações.
             $stmt_todas_avaliacoes = $pdo->prepare("SELECT parecer FROM avaliacoes WHERE id_video = :id_video");
             $stmt_todas_avaliacoes->execute([':id_video' => $id_video]);
             $lista_pareceres_video = $stmt_todas_avaliacoes->fetchAll(PDO::FETCH_COLUMN);
@@ -254,34 +244,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['avaliar'])) {
             foreach ($lista_pareceres_video as $p) {
                 if ($p === 'aprovado' || $p === 'aprovado_classificado') $pareceres_normalizados[] = 'aprovado_geral';
                 elseif ($p === 'reprovado') $pareceres_normalizados[] = 'reprovado_geral';
-                else $pareceres_normalizados[] = $p; // 'correcao'
+                else $pareceres_normalizados[] = $p; // 'correcao' ou outros
             }
             $pareceres_unicos_normalizados = array_unique($pareceres_normalizados);
 
             if (in_array('aprovado_geral', $pareceres_unicos_normalizados) && in_array('reprovado_geral', $pareceres_unicos_normalizados)) {
+                // Divergência encontrada entre as duas primeiras avaliações
                 $status_final_a_definir_no_video = 'reavaliar';
-                $_SESSION['info'] = "Divergência de pareceres. Vídeo enviado para reavaliação.";
+                $_SESSION['info'] = "Divergência de pareceres. Vídeo enviado para reavaliação (necessitará de 3º parecer).";
             } else {
-                // Lógica de consenso (pelo menos 2 pareceres iguais)
+                // Não houve divergência clara (ex: ambos aprovados, ambos reprovados, ou um era 'correcao')
+                // Verifica se há consenso de pelo menos 2 pareceres (o que será verdade se ambos foram iguais)
+                $contagem_parecer_atual = 0; // $avaliacao['parecer'] é o parecer da avaliação recém-submetida (a 2ª)
                 $parecer_atual_normalizado = (in_array($avaliacao['parecer'], ['aprovado', 'aprovado_classificado'])) ? 'aprovado_geral' : (($avaliacao['parecer'] === 'reprovado') ? 'reprovado_geral' : $avaliacao['parecer']);
-                $contagem_parecer_atual = 0;
+                
                 foreach($pareceres_normalizados as $p_norm) {
                     if ($p_norm === $parecer_atual_normalizado) $contagem_parecer_atual++;
                 }
 
-                if ($contagem_parecer_atual >= 2) {
+                if ($contagem_parecer_atual >= 2) { // Consenso entre as duas primeiras avaliações
                     if ($parecer_atual_normalizado === 'aprovado_geral') $status_final_a_definir_no_video = 'aprovado';
                     elseif ($parecer_atual_normalizado === 'reprovado_geral') $status_final_a_definir_no_video = 'reprovado';
                     elseif ($parecer_atual_normalizado === 'correcao') $status_final_a_definir_no_video = 'correcao';
                     
-                    if ($status_final_a_definir_no_video && empty($_SESSION['info'])) { // Só define se não houver msg de reavaliação
-                        $_SESSION['info'] = "Status do vídeo atualizado para " . $status_final_a_definir_no_video . ".";
+                    if ($status_final_a_definir_no_video && empty($_SESSION['info'])) { 
+                        $_SESSION['info'] = "Status do vídeo atualizado para " . htmlspecialchars($status_final_a_definir_no_video) . ".";
                     }
-                } else {
-                     if (empty($_SESSION['info'])) $_SESSION['info'] = "Avaliação registrada. Aguardando mais avaliações para consenso.";
+                } elseif (empty($_SESSION['info'])) { 
+                    // Se não houve divergência direta (aprovado vs reprovado) e nem consenso claro de 2 ainda (ex: 1 aprovado, 1 correção)
+                    // A mensagem padrão de "aguardando mais avaliações" pode não ser ideal aqui se já temos 2.
+                    // Poderia ser, por exemplo, status 'correcao' se um dos pareceres for 'correcao'.
+                    // Por ora, mantemos uma mensagem genérica ou ajustamos conforme a regra de negócio para 2 pareceres não divergentes e não consensuais.
+                    // Se um for 'correcao', talvez o vídeo deva ir para 'correcao'.
+                    if (in_array('correcao', $pareceres_unicos_normalizados)) {
+                        $status_final_a_definir_no_video = 'correcao';
+                        $_SESSION['info'] = "Uma das avaliações sugere correção. Vídeo marcado para CORREÇÃO.";
+                    } else {
+                        $_SESSION['info'] = "Avaliações registradas. Sem divergência clara ou consenso imediato."; // Ou outra mensagem
+                    }
                 }
             }
-        } else { // 3.3. É a primeira avaliação do vídeo.
+        } else { 
+            // Esta é a primeira avaliação do vídeo.
             $_SESSION['info'] = "Avaliação registrada. Aguardando segunda avaliação.";
         }
 
@@ -297,7 +301,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['avaliar'])) {
         header("Location: index.php"); 
         exit();
 
-    } catch (PDOException $e) {
+    } catch (PDOException $e) { // O ERRO ESTÁ NESSA LINHA
         $pdo->rollBack(); 
         $_SESSION['error'] = "Erro ao enviar avaliação: " . $e->getMessage(); 
     }
@@ -306,7 +310,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['avaliar'])) {
 // Se um vídeo específico foi selecionado para avaliação
 $video_atual = null;
 if (isset($_GET['avaliar'])) {
-    if ($_SESSION['avaliacoes_restantes'] <= 0) {
+    if ($_SESSION['avaliacoes_restantes'] <= 0 && $limite_global_avaliacoes != 0) {
         $_SESSION['error'] = "Você atingiu seu limite de avaliações e não pode iniciar uma nova avaliação.";
     } else {
         try {
@@ -441,7 +445,7 @@ if (isset($_GET['avaliar'])) {
                 <?php if (isset($video_atual)): ?>
                     <!-- Formulário de Avaliação para um vídeo específico -->
                     <div class="card mb-4">
-                        <div class="card-header bg-primary text-white yt">
+                        <div class="card-header card-header-custom-purple text-white yt">
                             <h5 class="mb-0">Avaliando: 
                                 <?= htmlspecialchars($video_atual['titulo']) ?> - 
                                 <a href="<?= htmlspecialchars($video_atual['link_youtube']) ?>" class="text-white" target="_blank" rel="noopener noreferrer">

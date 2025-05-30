@@ -49,7 +49,7 @@ CREATE TABLE `avaliacoes` (
   `comentario_edicao` text DEFAULT NULL,
   `portugues_correto` tinyint(1) DEFAULT NULL,
   `comentario_portugues` text DEFAULT NULL,
-  `parecer` enum('aprovado','reprovado','correcao','terceiro') NOT NULL,
+  `parecer` enum('aprovado','reprovado','correcao','terceiro', 'aprovado_classificado') NOT NULL,
   `justificativa` text DEFAULT NULL,
   `data_avaliacao` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

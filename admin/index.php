@@ -8,6 +8,15 @@ if (!isset($_SESSION['user_id']) || $_SESSION['user_tipo'] !== 'admin') {
 // Inclui o arquivo de configuração do banco de dados
 require_once '../includes/config.php';
 
+// NOVA CONFIGURAÇÃO CENTRAL DE CATEGORIAS (ORDEM DESEJADA)
+$categories_config = [
+    'anos_finais_ef' => 'Anos Finais do Ensino Fundamental',
+    'ensino_medio' => 'Ensino Médio',
+    'grad_mat_afins' => 'Graduandos em Matemática ou áreas afins',
+    'prof_acao' => 'Professores em Ação',
+    'povos_orig_trad' => 'Povos Originários e Tradicionais',
+    'com_geral' => 'Comunidade em Geral',
+];
 
 // --- INÍCIO DA LÓGICA DO ITEM 4: ATUALIZAR LIMITE DE VÍDEOS ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['atualizar_limite_videos'])) {
@@ -46,9 +55,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['atualizar_categorias'
     $user_id = $_POST['user_id'];
 
     $categorias_avaliador = [];
-    foreach (['comunidade_geral', 'professores_acao', 'ensino_fundamental', 'ensino_medio',  'graduandos_matematica', 'povos_originarios'] as $cat) {
-        if (isset($_POST[$cat])) {
-            $categorias_avaliador[] = $cat;
+    foreach (array_keys($categories_config) as $cat_key) {
+        if (isset($_POST[$cat_key])) {
+            $categorias_avaliador[] = $cat_key; // Salvar a chave da categoria
         }
     }
 
@@ -85,12 +94,13 @@ if ($categoria_filtro !== 'todas') {
 $stmt_videos->execute();
 $videos = $stmt_videos->fetchAll(PDO::FETCH_ASSOC);
 
-$categorias_videos = $pdo->query("SELECT DISTINCT categoria FROM videos")->fetchAll(PDO::FETCH_COLUMN);
+// Removido $categorias_videos pois não estava sendo usado após a mudança no filtro.
+// $categorias_videos = $pdo->query("SELECT DISTINCT categoria FROM videos")->fetchAll(PDO::FETCH_COLUMN); 
 
 $avaliadores = $pdo->query("SELECT id, nome, email, categoria FROM users WHERE tipo = 'avaliador' ORDER BY nome")->fetchAll(PDO::FETCH_ASSOC);
 
-function categoriaAtiva($categoria_str, $categoria_busca) {
-    return in_array($categoria_busca, explode(',', $categoria_str));
+function categoriaAtiva($categoria_str, $categoria_busca_key) { // Alterado o segundo parâmetro para _key para clareza
+    return in_array($categoria_busca_key, explode(',', $categoria_str));
 }
 
 // Busca quantidade de avaliacoes por categoria para cada avaliador
@@ -115,17 +125,39 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
         .video-row:hover {
             background-color: #f8f9fa;
         }
+        /* Estilos de badge do seu estilo.css */
+        .badge-aprovado, .badge-success { /* .badge-success para o caso 'aprovado' */
+            background-color: #28a745 !important;
+            color: white !important;
+        }
+        .badge-reprovado, .badge-danger { /* .badge-danger para o caso 'reprovado' */
+            background-color: #dc3545 !important; /* Usando danger color do Bootstrap */
+            color: white !important;
+        }
         .badge-pendente {
-            background-color: #dc3545;
-            color:rgb(253, 253, 253);
+            background-color: #ff830f !important; /* Laranja do seu CSS */
+            color: white !important;
         }
-        .badge-avaliado {
-            background-color: #28a745;
-            color:rgb(253, 253, 253);
+        .badge-reavaliar { 
+            background-color: #ffd24d; /* Amarelo do seu CSS */
+            color: #212529; 
         }
-        .badge-correcao {
-            background-color: #dc3545 !important;
-            color:rgb(253, 253, 253);
+        .badge-correcao, .badge-warning { /* .badge-warning para o caso 'correcao' */
+             background-color: #ffc107 !important; /* Bootstrap warning yellow */
+             color: #212529 !important; /* Texto escuro para contraste */
+        }
+        /* Para a nova badge azul "Aprovado (finalista)" */
+        .badge-primary { /* Bootstrap primary - geralmente azul */
+            background-color: #007bff !important; /* Forçando um azul Bootstrap, se necessário */
+            color: white !important;
+        }
+        .badge-secondary { /* Para status não mapeados ou default */
+            background-color: #6c757d !important;
+            color: white !important;
+        }
+         .badge-info { /* Para o caso 'terceiro' */
+            background-color: #17a2b8 !important; /* Bootstrap info color */
+            color: white !important;
         }
     </style>
 </head>
@@ -134,10 +166,9 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
     <div class="container mt-5">
         <h2>Bem-vindo ao Painel do Administrador</h2>
         <hr>
-        <!-- Mensagens de feedback -->
         <?php if (isset($_SESSION['success'])): ?>
             <div class="alert alert-success alert-dismissible fade show" role="alert">
-                <?= $_SESSION['success'] ?>
+                <?= htmlspecialchars($_SESSION['success']) ?>
                 <button type="button" class="close" data-dismiss="alert" aria-label="Close">
                     <span aria-hidden="true">&times;</span>
                 </button>
@@ -145,7 +176,7 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             <?php unset($_SESSION['success']); ?>
         <?php elseif (isset($_SESSION['error'])): ?>
             <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                <?= $_SESSION['error'] ?>
+                <?= htmlspecialchars($_SESSION['error']) ?>
                 <button type="button" class="close" data-dismiss="alert" aria-label="Close">
                     <span aria-hidden="true">&times;</span>
                 </button>
@@ -181,22 +212,16 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
         </div>
 
 
-        <!-- PERMITIR AO ADMIN MUDAR O LIMITE GLOBAL DE VIDEOS PARA CADA AVALIADOR -->
-        <div class="row text-center">
-            </div>
-
         <div class="card mb-4">
             <div class="card-header card-header-custom-light-purple">
                 <h5 class="mb-0">Configurar Limite de Avaliações por Avaliador</h5>
             </div>
             <div class="card-body">
                 <?php
-                // Buscar o limite atual para exibir no formulário
                 $stmt_get_limite_atual = $pdo->query("SELECT option_value FROM options WHERE option_name = 'limite_videos'");
                 $limite_atual_val = $stmt_get_limite_atual->fetchColumn();
-                // Se por algum motivo a opção não existir, define um padrão (ex: 0 ou um valor default)
                 if ($limite_atual_val === false) {
-                    $limite_atual_val = 8; // Um valor padrão, já que seu bd.sql.txt tem 8
+                    $limite_atual_val = 8; 
                 }
                 ?>
                 <form method="post" action="<?php echo htmlspecialchars($_SERVER['PHP_SELF']); ?>">
@@ -208,11 +233,7 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
                 </form>
             </div>
         </div>
-        <div class="card mb-4">
-            </div>
         
-
-        <!-- Lista de Avaliadores -->
         <div class="card mb-4">
             <div class="card-header card-header-custom-light-purple">
                 <h5 class="mb-0">Lista de Avaliadores</h5>
@@ -224,84 +245,34 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
                             <tr>
                                 <th>Nome</th>
                                 <th>Email</th>
-                                <th>Comunidade em Geral</th>
-                                <th>Professores em Ação</th>
-                                <th>Ensino Fundamental</th>
-                                <th>Ensino Médio</th>
-                                <th>Graduandos em Matemática</th>
-                                <th>Povos Originários</th>
+                                <?php foreach ($categories_config as $cat_key_loop => $cat_display_name): // Renomeada $cat_key para $cat_key_loop ?>
+                                    <th><?= htmlspecialchars($cat_display_name) ?></th>
+                                <?php endforeach; ?>
                                 <th>Ações</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <?php
-                            // Busca quantidade de avaliacoes por categoria para cada avaliador
-                            $avaliacoes_por_categoria = [];
-                            $stmt = $pdo->query("SELECT a.id_user, v.categoria, COUNT(*) as total FROM avaliacoes a JOIN videos v ON a.id_video = v.id GROUP BY a.id_user, v.categoria");
-                            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                                $avaliacoes_por_categoria[$row['id_user']][$row['categoria']] = $row['total'];
-                            }
-                            ?>
-
                             <?php foreach ($avaliadores as $avaliador): ?>
                                 <tr>
                                     <form method="post">
                                         <td><?= htmlspecialchars($avaliador['nome']) ?></td>
                                         <td><?= htmlspecialchars($avaliador['email']) ?></td>
                                         <?php
-                                        $id = $avaliador['id'];
-                                        $cat = $avaliador['categoria'];
+                                        $id_avaliador = $avaliador['id']; // Renomeada $id para $id_avaliador
+                                        $user_categorias_str = $avaliador['categoria']; 
                                         ?>
+                                        <?php foreach ($categories_config as $cat_key => $cat_display_name): ?>
+                                            <td>
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" name="<?= $cat_key ?>" id="<?= $cat_key ?>_<?= $id_avaliador ?>" <?= categoriaAtiva($user_categorias_str, $cat_key) ? 'checked' : '' ?>>
+                                                    <label class="form-check-label" for="<?= $cat_key ?>_<?= $id_avaliador ?>">
+                                                        <?= $avaliacoes_por_categoria[$id_avaliador][$cat_display_name] ?? 0 ?>
+                                                    </label>
+                                                </div>
+                                            </td>
+                                        <?php endforeach; ?>
                                         <td>
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" name="comunidade_geral" id="comunidade_geral_<?= $id ?>" <?= categoriaAtiva($cat, 'comunidade_geral') ? 'checked' : '' ?>>
-                                                <label class="form-check-label" for="comunidade_geral_<?= $id ?>">
-                                                    <?= $avaliacoes_por_categoria[$id]['Comunidade em Geral'] ?? 0 ?>
-                                                </label>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" name="professores_acao" id="professores_acao_<?= $id ?>" <?= categoriaAtiva($cat, 'professores_acao') ? 'checked' : '' ?>>
-                                                <label class="form-check-label" for="professores_acao_<?= $id ?>">
-                                                    <?= $avaliacoes_por_categoria[$id]['Professores em Ação'] ?? 0 ?>
-                                                </label>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" name="ensino_fundamental" id="ensino_fundamental_<?= $id ?>" <?= categoriaAtiva($cat, 'ensino_fundamental') ? 'checked' : '' ?>>
-                                                <label class="form-check-label" for="ensino_fundamental_<?= $id ?>">
-                                                    <?= $avaliacoes_por_categoria[$id]['Ensino Fundamental'] ?? 0 ?>
-                                                </label>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" name="ensino_medio" id="ensino_medio_<?= $id ?>" <?= categoriaAtiva($cat, 'ensino_medio') ? 'checked' : '' ?>>
-                                                <label class="form-check-label" for="ensino_medio_<?= $id ?>">
-                                                    <?= $avaliacoes_por_categoria[$id]['Ensino Médio'] ?? 0 ?>
-                                                </label>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" name="graduandos_matematica" id="graduandos_matematica_<?= $id ?>" <?= categoriaAtiva($cat, 'graduandos_matematica') ? 'checked' : '' ?>>
-                                                <label class="form-check-label" for="graduandos_matematica_<?= $id ?>">
-                                                    <?= $avaliacoes_por_categoria[$id]['Graduandos em Matemática'] ?? 0 ?>
-                                                </label>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" name="povos_originarios" id="povos_originarios_<?= $id ?>" <?= categoriaAtiva($cat, 'povos_originarios') ? 'checked' : '' ?>>
-                                                <label class="form-check-label" for="povos_originarios_<?= $id ?>">
-                                                    <?= $avaliacoes_por_categoria[$id]['Povos Originários'] ?? 0 ?>
-                                                </label>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <input type="hidden" name="user_id" value="<?= $id ?>">
+                                            <input type="hidden" name="user_id" value="<?= $id_avaliador ?>">
                                             <button type="submit" name="atualizar_categorias" class="btn btn-primary btn-sm">Atualizar</button>
                                         </td>
                                     </form>
@@ -313,7 +284,6 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             </div>
         </div>
 
-        <!-- Filtro por categoria -->
         <div class="card mb-4">
             <div class="card-header card-header-custom-light-purple">
                 <h5 class="mb-0">Filtrar Vídeos</h5>
@@ -321,27 +291,18 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             <div class="card-body">
                 <form method="get" class="form-inline">
                     <div class="form-group mr-3">
-                        <label for="categoria" class="mr-2">Categoria:</label>
+                        <label for="categoria_filtro" class="mr-2">Categoria:</label>
                         <?php
-                        // Define as categorias disponíveis
-                        $categorias = [
-                            "Comunidade em Geral",
-                            "Professores em Ação",
-                            "Ensino Fundamental",
-                            "Ensino Médio",
-                            "Graduandos em Matemática",
-                            "Povos Originários"
-                        ];
+                        $categorias_para_filtro = array_values($categories_config);
                         ?>
-
-                        <select name="categoria" id="categoria" class="form-control">
+                        <select name="categoria" id="categoria_filtro" class="form-control">
                             <option value="todas" <?= ($categoria_filtro ?? 'todas') === 'todas' ? 'selected' : '' ?>>Todas as Categorias</option>
-                            <?php foreach ($categorias as $categoria): ?>
+                            <?php foreach ($categorias_para_filtro as $categoria_nome_exibicao): ?>
                                 <option
-                                    value="<?= htmlspecialchars($categoria) ?>"
-                                    <?= ($categoria_filtro ?? '') === $categoria ? 'selected' : '' ?>
+                                    value="<?= htmlspecialchars($categoria_nome_exibicao) ?>"
+                                    <?= ($categoria_filtro ?? '') === $categoria_nome_exibicao ? 'selected' : '' ?>
                                 >
-                                    <?= htmlspecialchars($categoria) ?>
+                                    <?= htmlspecialchars($categoria_nome_exibicao) ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
@@ -351,7 +312,6 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             </div>
         </div>
 
-        <!-- Lista de vídeos -->
         <div class="card">
             <div class="card-header card-header-custom-light-purple">
                 <h5 class="mb-0">Lista de Vídeos</h5>
@@ -370,53 +330,87 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
                         </thead>
                         <tbody>
                             <?php foreach ($videos as $video): ?>
-                                <tr class="video-row">
-                                    <td>
-                                        <span class="badge badge-<?= strtolower($video['status']) ?>">
-                                            <?= ucfirst($video['status']) ?>
-                                        </span>
-                                    </td>
-                                    <td><?= htmlspecialchars($video['titulo']) ?></td>
-                                    <td><?= htmlspecialchars($video['categoria']) ?></td>
-                                    <td>
-                                        <a href="<?= htmlspecialchars($video['link_youtube']) ?>" target="_blank">
-                                            Ver no YouTube
-                                        </a>
-                                    </td>
-                                    <td>
-                                        <?php
-                                        // Busca as avaliações deste vídeo
-                                        $stmt_avaliacoes = $pdo->prepare("
-                                            SELECT a.parecer, u.nome, a.id_user
-                                            FROM avaliacoes a
-                                            JOIN users u ON a.id_user = u.id
-                                            WHERE a.id_video = :video_id
-                                            ORDER BY a.data_avaliacao DESC
-                                        ");
-                                        $stmt_avaliacoes->bindParam(':video_id', $video['id'], PDO::PARAM_INT);
-                                        $stmt_avaliacoes->execute();
-                                        $avaliacoes = $stmt_avaliacoes->fetchAll(PDO::FETCH_ASSOC);
+                            <?php
+                            // PASSO 1: Buscar todas as avaliações para o vídeo atual ANTES de definir o status principal
+                            $stmt_all_evals_for_this_video = $pdo->prepare("
+                                SELECT a.parecer, u.nome, a.id_user
+                                FROM avaliacoes a
+                                JOIN users u ON a.id_user = u.id
+                                WHERE a.id_video = :video_id_param
+                                ORDER BY a.data_avaliacao DESC
+                            ");
+                            $stmt_all_evals_for_this_video->bindParam(':video_id_param', $video['id'], PDO::PARAM_INT);
+                            $stmt_all_evals_for_this_video->execute();
+                            $all_evaluations_for_this_video = $stmt_all_evals_for_this_video->fetchAll(PDO::FETCH_ASSOC);
 
-                                        if (empty($avaliacoes)) {
-                                            echo '<span class="text-muted">Nenhuma avaliação</span>';
-                                        } else {
-                                            foreach ($avaliacoes as $avaliacao) {
-                                                echo '<div>';
-                                                echo '<a href="#" class="ver-detalhes"
-                                                    data-toggle="modal"
-                                                    data-target="#avaliacaoModal"
-                                                    data-video-id="' . ($video['id']) . '"
-                                                    data-avaliador-id="' . ($avaliacao['id_user']) . '"
-                                                    data-avaliador-nome="' . htmlspecialchars($avaliacao['nome']) . '">';
-                                                echo htmlspecialchars($avaliacao['nome']) . ': ';
-                                                echo '<span class="badge badge-' . ($avaliacao['parecer'] === 'aprovado' ? 'success' : 'warning') . '">';
-                                                echo ucfirst($avaliacao['parecer']);
-                                                echo '</span>';
-                                                echo '</a>';
-                                                echo '</div>';
+                            // PASSO 2: Determinar a classe e o texto da badge de STATUS PRINCIPAL do vídeo
+                            $video_status_text = ucfirst(htmlspecialchars($video['status']));
+                            $status_video_key = strtolower(str_replace(' ', '-', $video['status']));
+                            
+                            // Mapeamento padrão de classes para o status principal do vídeo
+                            if ($status_video_key === 'aprovado' || $status_video_key === 'avaliado') $status_final_class = 'success'; // 'avaliado' também como success
+                            elseif ($status_video_key === 'reprovado') $status_final_class = 'danger';
+                            elseif ($status_video_key === 'pendente') $status_final_class = 'pendente';
+                            elseif ($status_video_key === 'reavaliar') $status_final_class = 'reavaliar';
+                            elseif ($status_video_key === 'correcao') $status_final_class = 'warning';
+                            else $status_final_class = 'secondary'; // Fallback
+
+                            // Lógica ADICIONAL para alterar a cor da badge de status "Aprovado" principal
+                            if ($video['status'] === 'aprovado') {
+                                $count_finalista_evals = 0;
+                                // Não precisamos contar $count_aprovado_normal para esta lógica específica,
+                                // apenas o número total de avaliações e quantos são 'aprovado_classificado'
+                                
+                                foreach ($all_evaluations_for_this_video as $eval) {
+                                    if ($eval['parecer'] === 'aprovado_classificado') {
+                                        $count_finalista_evals++;
+                                    }
+                                }
+
+                                // Condição: Exatamente 2 avaliações no total para este vídeo, e AMBAS são 'aprovado_classificado'
+                                if (count($all_evaluations_for_this_video) == 2 && $count_finalista_evals == 2) {
+                                    $status_final_class = 'primary'; // Azul para o status principal do vídeo
+                                }
+                                // Se a condição acima não for atendida (ex: 1 aprovado + 1 finalista, ou 2 aprovados normais, ou >2 avaliações),
+                                // $status_final_class permanecerá 'success' (verde), conforme definido no mapeamento padrão acima.
+                            }
+                            ?>
+                            <tr class="video-row">
+                                <td>
+                                    <span class="badge badge-<?= htmlspecialchars($status_final_class) ?>">
+                                        <?= htmlspecialchars($video_status_text) ?>
+                                    </span>
+                                </td>
+                                <td><?= htmlspecialchars($video['titulo']) ?></td>
+                                <td><?= htmlspecialchars($video['categoria']) ?></td>
+                                <td><a href="<?= htmlspecialchars($video['link_youtube']) ?>" target="_blank">Ver no YouTube</a></td>
+                                <td>
+                                    <?php
+                                    if (empty($all_evaluations_for_this_video)) {
+                                        echo '<span class="text-muted">Nenhuma avaliação</span>';
+                                    } else {
+                                        foreach ($all_evaluations_for_this_video as $avaliacao_item):
+                                            $parecer_text = '';
+                                            $parecer_class = '';
+                                            switch ($avaliacao_item['parecer']) {
+                                                case 'aprovado':
+                                                    $parecer_text = 'Aprovado'; $parecer_class = 'success'; break;
+                                                case 'aprovado_classificado': 
+                                                    $parecer_text = 'Aprovado'; $parecer_class = 'primary'; break;
+                                                case 'reprovado':
+                                                    $parecer_text = 'Reprovado'; $parecer_class = 'danger'; break;
+                                                case 'correcao':
+                                                    $parecer_text = 'Correção'; $parecer_class = 'warning'; break;
+                                                case 'terceiro': 
+                                                    $parecer_text = 'Terceiro'; $parecer_class = 'info'; break;
+                                                default:
+                                                    $parecer_text = ucfirst(htmlspecialchars($avaliacao_item['parecer']));
+                                                    $parecer_class = 'secondary'; break;
                                             }
-                                        }
-                                        ?>
+                                            echo '<div><a href="#" class="ver-detalhes" data-toggle="modal" data-target="#avaliacaoModal" data-video-id="' . htmlspecialchars($video['id']) . '" data-avaliador-id="' . htmlspecialchars($avaliacao_item['id_user']) . '" data-avaliador-nome="' . htmlspecialchars($avaliacao_item['nome']) . '">' . htmlspecialchars($avaliacao_item['nome']) . ': <span class="badge badge-' . htmlspecialchars($parecer_class) . '">' . htmlspecialchars($parecer_text) . '</span></a></div>';
+                                        endforeach;
+                                    }
+                                    ?>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -428,7 +422,6 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
     </div>
 
 <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-<!-- Modal de Detalhes da Avaliação -->
 <div class="modal fade" id="avaliacaoModal" tabindex="-1" role="dialog" aria-labelledby="avaliacaoModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg" role="document">
         <div class="modal-content">
@@ -437,8 +430,7 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" id="modalAvaliacaoBody">
-                <!-- Conteúdo será carregado via AJAX -->
-            </div>
+                </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
             </div>
@@ -452,11 +444,12 @@ $(document).ready(function() {
     $(document).on('click', '.ver-detalhes', function(e) {
         e.preventDefault();
         
-        const videoId = $(this).data('video-id'); // Será 1
-        const avaliadorId = $(this).data('avaliador-id'); // Será 1
+        const videoId = $(this).data('video-id'); 
+        const avaliadorId = $(this).data('avaliador-id'); 
+        const avaliadorNome = $(this).data('avaliador-nome');
         
         // Atualiza o título do modal
-        $('#avaliacaoModalLabel').text('Detalhes da Avaliação');
+        $('#avaliacaoModalLabel').text('Detalhes da Avaliação - ' + avaliadorNome); // Adicionado nome ao título
         
         // Mostra o spinner enquanto carrega
         $('#modalAvaliacaoBody').html(`
@@ -496,12 +489,6 @@ $(document).ready(function() {
 });
 </script>
 
-<!--
-<script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
-<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
--->
-
-<!-- Footer -->
 <?php include '../includes/footer.php'; ?>
 </body>
 </html>
