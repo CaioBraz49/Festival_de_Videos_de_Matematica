@@ -65,7 +65,17 @@ INSERT INTO `avaliacoes` (`id`, `id_user`, `id_video`, `conceitos_corretos`, `co
 (8, 3, 2, 0, '', 0, '', 0, '', 0, '', 0, '', 0, '', 0, '', 0, '', 0, '', 'aprovado', 'ok', '2025-05-23 21:31:52');
 
 -- --------------------------------------------------------
-
+--
+-- Tabela para armazenar o o limite de avaliações por categoria
+--
+CREATE TABLE `evaluator_category_quotas` (
+  `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `user_id` int(11) NOT NULL,
+  `category_key` varchar(50) NOT NULL,
+  `quota` int(10) UNSIGNED NOT NULL,
+  FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+  UNIQUE KEY `user_category_unique` (`user_id`, `category_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 --
 -- Estrutura para tabela `options`
 --
@@ -133,7 +143,7 @@ CREATE TABLE `videos` (
 
 INSERT INTO `videos` (`id`, `titulo`, `tema`, `descricao`, `categoria`, `link_youtube`, `duracao`, `status`, `created_at`) VALUES
 (1, 'Poupar', 'Educação Financeira', 'O objetivo foi produzir uma paródia da música \"Ouvir Dizer\" de Melim, adequando-a à temática da educação financeira.', 'Comunidade em Geral', 'https://www.youtube.com/watch?v=n_6xkXw6fu8', NULL, 'pendente', '2025-05-18 18:03:32'),
-(2, 'Números Primos', 'O vídeo explica o que vem a ser número primo', 'O vídeo explica o que vem a ser número primo, esclarecendo dúvidas comuns sobre essa temática, tais como, o número 1 é primo?, o número 0 é primo?, os números negativos são primos?, existe uma fórmula para determinar números primos?', 'Comunidade em geral', 'https://www.youtube.com/watch?v=jMCwNqmVQBY', NULL, 'avaliado', '2025-05-18 19:47:23'),
+(2, 'Números Primos', 'O vídeo explica o que vem a ser número primo', 'O vídeo explica o que vem a ser número primo, esclarecendo dúvidas comuns sobre essa temática, tais como, o número 1 é primo?, o número 0 é primo?, os números negativos são primos?, existe uma fórmula para determinar números primos?', 'Comunidade em geral', 'https://www.youtube.com/watch?v=jMCwNqmVQBY', NULL, 'aprovado', '2025-05-18 19:47:23'),
 (3, 'Infinito', 'Conceito de infinito', 'Trata das características únicas do conceito de infinito dentro da matemática', 'Comunidade em geral ', 'https://www.youtube.com/watch?v=DyULqbKWgF0', NULL, 'pendente', '2025-05-18 21:44:14'),
 (4, 'Como provar algo em matemática?', 'O vídeo irá abordar como a matemática está fundamentada em provas.', 'O vídeo irá abordar como a matemática está fundamentada em provas. Após essa breve introdução, nós comentaremos sobre os meios mais comuns de provar algo, trazendo exemplos. Vamos falar das provas por indução, um método direto, prova por absurdo e uma situação em que podemos usar o contraexemplo.', 'Graduandos em Matemática', 'https://www.youtube.com/watch?v=jFFlbZhiGak', NULL, 'pendente', '2025-05-18 21:48:17');
 
