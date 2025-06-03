@@ -125,17 +125,25 @@ INSERT INTO `users` (`id`, `nome`, `email`, `senha`, `categoria`, `tipo`, `creat
 -- Estrutura para tabela `videos`
 --
 
-CREATE TABLE `videos` (
-  `id` int(11) NOT NULL,
-  `titulo` varchar(200) NOT NULL,
-  `tema` varchar(100) NOT NULL,
-  `descricao` text DEFAULT NULL,
-  `categoria` varchar(50) NOT NULL,
-  `link_youtube` varchar(255) NOT NULL,
-  `duracao` int(11) DEFAULT NULL COMMENT 'Duração em segundos',
-  `status` enum('pendente','avaliado','correcao','aprovado','reprovado', 'reavaliar') DEFAULT 'pendente',
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+CREATE TABLE videos (
+  id int(11) NOT NULL,
+  nome varchar(255) DEFAULT NULL,
+  email varchar(255) DEFAULT NULL,
+  cidade varchar(100) DEFAULT NULL,
+  estado varchar(50) DEFAULT NULL,
+  telefone varchar(20) DEFAULT NULL,
+  instituicao_ensino varchar(255) DEFAULT NULL,
+  nivel_instituicao varchar(50) DEFAULT NULL,
+  autarquia varchar(50) DEFAULT NULL,
+  titulo varchar(200) NOT NULL,
+  tema varchar(100) NOT NULL,
+  descricao text,
+  categoria enum('Anos Finais do Ensino Fundamental','Ensino Médio','Graduandos em Matemática ou áreas afins','Professores em Ação','Povos Originários e Tradicionais','Comunidade em Geral') DEFAULT NULL,
+  link_youtube varchar(255) NOT NULL,
+  dados text COMMENT 'JSON com dados dos autores ou vídeo',
+  status enum('pendente','correcao','aprovado','reprovado','aprovado_classificado') DEFAULT 'pendente',
+  created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- Despejando dados para a tabela `videos`
