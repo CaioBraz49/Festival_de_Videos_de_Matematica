@@ -5,7 +5,6 @@ ini_set('display_errors', 1);
 
 session_start();
 
-include '../includes/function.php'; // Inclui funções auxiliares
 
 // MODIFICADO: A condição original aqui era para 'avaliador', mas o nome do arquivo é admin/index.php
 // Se este arquivo é de fato para AVALIADORES, a condição abaixo está correta.
@@ -31,38 +30,13 @@ $user_info = $stmt_user_categorias->fetch(); //
 
 if (!$user_info || empty(trim($user_info['categoria'] ?? ''))) { //
     die("
-            
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Sem Categoria</title>
-    <style>
-        body {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            font-family: Arial, sans-serif;
-        }
-        img {
-            margin-bottom: 20px;
-        }
-    </style>
-</head>
-<body>
-    <img src='../img/logo.png' alt='Logo'>
-    <H1>Não há categoria atribuída para este avaliador</H1>
-
+            Nenhuma categoria encontrada para este usuário
             <script>
-            alert('Nenhuma categoria definida para este usuário. Se isso for um erro comunique o administrador.');
+            alert('Nenhuma categoria definida para este usuário. Se isso for um erro comunique-se com o administrador.');
             setTimeout(function() {
                 window.location.href = '../includes/logout.php';
             }, 5000);
         </script>
-</body>
-</html>		
     ");
 }
 
@@ -234,7 +208,8 @@ if (!empty($categorias_para_sql_query)) { //
         SELECT v.*
         FROM videos v
         WHERE (
-            (v.status = 'pendente' AND (SELECT COUNT(*) FROM avaliacoes a WHERE a.id_video = v.id) < 5)
+            (v.status = 'pendente' AND (SELECT COUNT(*) FROM avaliacoes a WHERE a.id_video = v.id) < 2) OR
+            (v.status = 'reavaliar' AND (SELECT COUNT(*) FROM avaliacoes a WHERE a.id_video = v.id) < 3)
         )
         AND v.categoria IN ($placeholders_sql_videos) -- MODIFICADO para usar a lista expandida
         AND v.id NOT IN (SELECT id_video FROM avaliacoes WHERE id_user = ?)
@@ -251,256 +226,261 @@ if (!empty($categorias_para_sql_query)) { //
 
 // Processar avaliação se o formulário foi enviado 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['avaliar'])) {
-    $id_video = intval($_POST['id_video']);
-    $id_user = $_SESSION['user_id']; // $id_user é o mesmo que $user_id da sessão
+    $id_video = intval($_POST['id_video']); 
+    $id_user = $_SESSION['user_id']; 
 
-    // --- NOVA LÓGICA DE VERIFICAÇÃO DE LIMITE POR CATEGORIA ---
+    // 1. Obter a categoria do vídeo que está sendo avaliado
+    $stmt_video_cat_post = $pdo->prepare("SELECT categoria FROM videos WHERE id = :id_video");
+    $stmt_video_cat_post->execute([':id_video' => $id_video]);
+    $video_category_name_post = $stmt_video_cat_post->fetchColumn();
+
+    if (!$video_category_name_post) {
+        $_SESSION['error'] = "Vídeo (ID: ".htmlspecialchars($id_video).") não encontrado para verificar limite de categoria.";
+        header("Location: index.php");
+        exit();
+    }
+
+    // 2. Normalizar o nome da categoria do vídeo para sua CHAVE NOVA correspondente
+    $video_category_key_post = null; // Inicialize
+    // Primeiro, tenta encontrar a chave nova diretamente pelo nome da categoria do vídeo (caso seja um nome novo)
+    $key_found_directly = array_search($video_category_name_post, $mapa_categorias_atualizado);
+    if ($key_found_directly !== false) {
+        $video_category_key_post = $key_found_directly;
+    } else {
+        // Se não encontrou, o nome da categoria do vídeo pode ser um NOME ANTIGO.
+        // Tenta encontrar o NOME NOVO correspondente ao NOME ANTIGO do vídeo.
+        $nome_novo_correspondente_ao_antigo_do_video = null;
+        foreach ($mapa_nomes_novos_para_antigos_sql as $nome_novo_map => $nome_antigo_map) {
+            if ($nome_antigo_map === $video_category_name_post) {
+                $nome_novo_correspondente_ao_antigo_do_video = $nome_novo_map;
+                break;
+            }
+        }
+        if ($nome_novo_correspondente_ao_antigo_do_video) {
+            // Agora, com o NOME NOVO, busca a CHAVE NOVA correspondente.
+            $key_from_mapped_name = array_search($nome_novo_correspondente_ao_antigo_do_video, $mapa_categorias_atualizado);
+            if ($key_from_mapped_name !== false) {
+                $video_category_key_post = $key_from_mapped_name;
+            }
+        }
+    }
+    
+    // 3. Verificar se a categoria é válida e atribuída ao avaliador
+    if ($video_category_key_post === null || !in_array($video_category_key_post, $categorias_atribuidas_chaves)) {
+        $_SESSION['error'] = "Tentativa de avaliar vídeo de categoria não permitida ('" . htmlspecialchars($video_category_name_post) . "') ou categoria não reconhecida pelo sistema de normalização.";
+        header("Location: index.php");
+        exit();
+    }
+
+    // 4. Verificar a quota para esta categoria
+    //    As variáveis $user_quotas_por_categoria e $user_eval_counts_por_categoria_chave
+    //    já devem estar populadas com os dados do avaliador logado ANTES deste bloco POST.
+    $quota_para_esta_categoria = $user_quotas_por_categoria[$video_category_key_post] ?? null; // Quota definida para o usuário nesta categoria
+    $contagem_nesta_categoria = $user_eval_counts_por_categoria_chave[$video_category_key_post] ?? 0; // Quantas ele já avaliou nesta categoria
+
+    if ($quota_para_esta_categoria !== null && $contagem_nesta_categoria >= $quota_para_esta_categoria) {
+        $_SESSION['error'] = "Você já atingiu seu limite de " . htmlspecialchars($quota_para_esta_categoria) . 
+                             " avaliações para a categoria '" . htmlspecialchars($mapa_categorias_atualizado[$video_category_key_post]) . "'. Sua avaliação não foi submetida.";
+        header("Location: index.php");
+        exit();
+    }
+
+
+    // Se passou na verificação, continua para montar o array $avaliacao e inserir no banco
+    $avaliacao = [
+        'id_user' => $id_user,
+        'id_video' => $id_video,
+        'conceitos_corretos' => isset($_POST['conceitos_matematicos_status']) ? (int)$_POST['conceitos_matematicos_status'] : 0, // Pega o valor do radio (0 ou 1)
+        'comentario_conceitos' => $_POST['comentario_conceitos'] ?? '',
+        'tempo_respeitado' => isset($_POST['tempo_respeitado']) ? 1 : 0,
+        'comentario_tempo' => $_POST['comentario_tempo'] ?? '',
+        'possui_titulo' => isset($_POST['titulo_status']) ? (int)$_POST['titulo_status'] : 0, // 1 se sim, 0 se não
+        'comentario_titulo' => $_POST['comentario_titulo'] ?? '',
+        'possui_creditos' => isset($_POST['creditos_status']) ? (int)$_POST['creditos_status'] : 0, // 1 se sim, 0 se não
+        'comentario_creditos' => $_POST['comentario_creditos'] ?? '',
+        'discurso_adequado' => isset($_POST['discurso_status']) ? (int)$_POST['discurso_status'] : 0,
+        'comentario_discurso' => $_POST['comentario_discurso'] ?? '',
+        'audio_qualidade' => isset($_POST['audio_status']) ? (int)$_POST['audio_status'] : 0,
+        'comentario_audio' => $_POST['comentario_audio'] ?? '',
+        'imagem_qualidade' => isset($_POST['imagem_status']) ? (int)$_POST['imagem_status'] : 0,
+        'comentario_imagem' => $_POST['comentario_imagem'] ?? '',
+        'edicao_correta' => isset($_POST['edicao_status']) ? (int)$_POST['edicao_status'] : 0,
+        'comentario_edicao' => $_POST['comentario_edicao'] ?? '',
+        'portugues_correto' => isset($_POST['portugues_status']) ? (int)$_POST['portugues_status'] : 0,
+        'comentario_portugues' => $_POST['comentario_portugues'] ?? '',
+        'parecer' => $_POST['parecer'],
+        'justificativa' => $_POST['justificativa'] ?? ''
+    ]; 
 
     try {
-        // 1. Obter a categoria do vídeo que está sendo avaliado.
-        $stmt_video_cat = $pdo->prepare("SELECT categoria FROM videos WHERE id = :id_video");
-        $stmt_video_cat->execute([':id_video' => $id_video]);
-        $video_info = $stmt_video_cat->fetch(PDO::FETCH_ASSOC);
-
-        if (!$video_info) {
-            $_SESSION['error'] = "Erro crítico: Vídeo com ID " . htmlspecialchars($id_video) . " não encontrado.";
-            header("Location: index.php");
-            exit();
-        }
-        $video_category_name = $video_info['categoria'];
-
-        // 2. Mapear o nome completo da categoria para a 'category_key' do banco.
-        //    Este mapa é essencial para conectar 'videos.categoria' com 'evaluator_category_quotas.category_key'.
-        $category_map = [
-            'Anos Finais do Ensino Fundamental' => 'anos_finais_ef',
-            'Ensino Médio' => 'ensino_medio',
-            'Graduandos em Matemática ou áreas afins' => 'grad_mat_afins',
-            'Professores em Ação' => 'prof_acao',
-            'Povos Originários e Tradicionais' => 'povos_orig_trad',
-            'Comunidade em Geral' => 'com_geral'
-        ];
-        $category_key = $category_map[$video_category_name] ?? null;
-
-        if (!$category_key) {
-            $_SESSION['error'] = "Erro de configuração: A categoria do vídeo '" . htmlspecialchars($video_category_name) . "' não possui uma chave mapeada no sistema.";
-            header("Location: index.php");
-            exit();
-        }
-
-        // 3. Buscar a cota (limite) do avaliador para esta categoria específica.
-        $stmt_quota = $pdo->prepare(
-            "SELECT quota FROM evaluator_category_quotas WHERE user_id = :user_id AND category_key = :category_key"
-        );
-        $stmt_quota->execute([':user_id' => $id_user, ':category_key' => $category_key]);
-        $quota_row = $stmt_quota->fetch(PDO::FETCH_ASSOC);
-        
-        // Se não houver cota definida, o limite é 0 (não pode avaliar).
-        $limite_na_categoria = $quota_row ? (int)$quota_row['quota'] : 0;
-
-        // 4. Contar quantas avaliações o usuário JÁ FEZ para esta mesma categoria.
-        //    Para isso, precisamos juntar as tabelas 'avaliacoes' e 'videos'.
-        $stmt_contagem_cat = $pdo->prepare(
-            "SELECT COUNT(a.id) 
-             FROM avaliacoes a
-             JOIN videos v ON a.id_video = v.id
-             WHERE a.id_user = :user_id AND v.categoria = :categoria_nome"
-        );
-        $stmt_contagem_cat->execute([':user_id' => $id_user, ':categoria_nome' => $video_category_name]);
-        $avaliacoes_na_categoria = $stmt_contagem_cat->fetchColumn();
-
-        // 5. Verificar se o avaliador tem permissão e se não atingiu o limite.
-        if ($limite_na_categoria <= 0) {
-            $_SESSION['error'] = "Você não tem permissão para avaliar vídeos na categoria '" . htmlspecialchars($video_category_name) . "'.";
-            header("Location: index.php");
-            exit();
-        }
-        
-        if ($avaliacoes_na_categoria >= $limite_na_categoria) {
-            $_SESSION['error'] = "Você atingiu seu limite de " . htmlspecialchars($limite_na_categoria) . " avaliações para a categoria '" . htmlspecialchars($video_category_name) . "'.";
-            header("Location: index.php"); 
-            exit();
-        }
-
-        // --- FIM DA NOVA LÓGICA DE VERIFICAÇÃO ---
-
-        // Se passou na verificação, continua para montar o array $avaliacao e inserir no banco
-        $avaliacao = [
-            'id_user' => $id_user,
-            'id_video' => $id_video,
-            'conceitos_corretos' => isset($_POST['conceitos_matematicos_status']) ? (int)$_POST['conceitos_matematicos_status'] : 0, // Pega o valor do radio (0 ou 1)
-            'comentario_conceitos' => $_POST['comentario_conceitos'] ?? '',
-            'tempo_respeitado' => isset($_POST['tempo_respeitado']) ? 0 : 1,
-            'comentario_tempo' => $_POST['comentario_tempo'] ?? '',
-            'possui_titulo' => isset($_POST['titulo_status']) ? (int)$_POST['titulo_status'] : 0, // 1 se sim, 0 se não
-            'comentario_titulo' => $_POST['comentario_titulo'] ?? '',
-            'possui_creditos' => isset($_POST['creditos_status']) ? (int)$_POST['creditos_status'] : 0, // 1 se sim, 0 se não
-            'comentario_creditos' => $_POST['comentario_creditos'] ?? '',
-            'discurso_adequado' => isset($_POST['discurso_status']) ? (int)$_POST['discurso_status'] : 0,
-            'comentario_discurso' => $_POST['comentario_discurso'] ?? '',
-            'audio_qualidade' => isset($_POST['audio_status']) ? (int)$_POST['audio_status'] : 0,
-            'comentario_audio' => $_POST['comentario_audio'] ?? '',
-            'imagem_qualidade' => isset($_POST['imagem_status']) ? (int)$_POST['imagem_status'] : 0,
-            'comentario_imagem' => $_POST['comentario_imagem'] ?? '',
-            'edicao_correta' => isset($_POST['edicao_status']) ? (int)$_POST['edicao_status'] : 0,
-            'comentario_edicao' => $_POST['comentario_edicao'] ?? '',
-            'portugues_correto' => isset($_POST['portugues_status']) ? (int)$_POST['portugues_status'] : 0,
-            'comentario_portugues' => $_POST['comentario_portugues'] ?? '',
-            'parecer' => $_POST['parecer'],
-            'justificativa' => $_POST['justificativa'] ?? ''
-        ]; 
-
-        // Inicia a transação para garantir a integridade dos dados
         $pdo->beginTransaction();
-
+        
+        // 1. INSERIR A AVALIAÇÃO
         $sql_avaliacao = "INSERT INTO avaliacoes (
-            id_user, id_video, conceitos_corretos, comentario_conceitos, 
-            tempo_respeitado, comentario_tempo, possui_titulo, comentario_titulo, 
-            possui_creditos, comentario_creditos, discurso_adequado, comentario_discurso, 
-            audio_qualidade, comentario_audio, imagem_qualidade, comentario_imagem,
-            edicao_correta, comentario_edicao, portugues_correto, comentario_portugues, 
+            id_user, id_video, 
+            conceitos_corretos, comentario_conceitos, 
+            tempo_respeitado, comentario_tempo,
+            possui_titulo, comentario_titulo, 
+            possui_creditos, comentario_creditos, 
+            discurso_adequado, comentario_discurso, 
+            audio_qualidade, comentario_audio, 
+            imagem_qualidade, comentario_imagem,
+            edicao_correta, comentario_edicao, 
+            portugues_correto, comentario_portugues, 
             parecer, justificativa
         ) VALUES (
-            :id_user, :id_video, :conceitos_corretos, :comentario_conceitos, 
-            :tempo_respeitado, :comentario_tempo, :possui_titulo, :comentario_titulo, 
-            :possui_creditos, :comentario_creditos, :discurso_adequado, :comentario_discurso, 
-            :audio_qualidade, :comentario_audio, :imagem_qualidade, :comentario_imagem,
-            :edicao_correta, :comentario_edicao, :portugues_correto, :comentario_portugues, 
+            :id_user, :id_video, 
+            :conceitos_corretos, :comentario_conceitos, 
+            :tempo_respeitado, :comentario_tempo,
+            :possui_titulo, :comentario_titulo, 
+            :possui_creditos, :comentario_creditos, 
+            :discurso_adequado, :comentario_discurso, 
+            :audio_qualidade, :comentario_audio, 
+            :imagem_qualidade, :comentario_imagem,
+            :edicao_correta, :comentario_edicao, 
+            :portugues_correto, :comentario_portugues, 
             :parecer, :justificativa
         )"; 
-        $stmt = $pdo->prepare($sql_avaliacao);
-        $stmt->execute($avaliacao);
+        $stmt_insert_avaliacao = $pdo->prepare($sql_avaliacao);
+        // Assume-se que o array $avaliacao foi definido corretamente antes com as chaves correspondentes.
+        $stmt_insert_avaliacao->execute($avaliacao);
 
-        // -- INÍCIO DA LÓGICA DE DECISão DE STATUS DO VÍDEO (VERSÃO FINAL) --
+        // DEBUG DO INSERT: Verificar se a linha foi realmente inserida
+        $linhas_afetadas_insert = $stmt_insert_avaliacao->rowCount();
 
-        $stmt_num_avaliacoes = $pdo->prepare(
-            "SELECT COUNT(*) FROM avaliacoes WHERE id_video = :id_video"
-        );
-        $stmt_num_avaliacoes->execute([':id_video' => $id_video]);
-        $num_avaliacoes_agora = $stmt_num_avaliacoes->fetchColumn();
+        echo "<div style='border:2px solid #000; padding:10px; margin-top:20px; background-color: #f0f0f0;'>";
+        echo "<h4 style='color:purple;'>DEBUG DA OPERAÇÃO DE INSERT:</h4>";
+        echo "<p><strong>Linhas afetadas pela inserção da avaliação: " . $linhas_afetadas_insert . "</strong></p>";
 
-        $status_final_a_definir_no_video = null;
-        $_SESSION['info'] = '';
+        if ($linhas_afetadas_insert > 0) {
+            echo "<p style='color:green; font-weight:bold;'>AVALIAÇÃO APARENTEMENTE INSERIDA NO BANCO DE DADOS.</p>";
 
-        // 1. Buscar todos os pareceres originais (sem normalização ainda).
-        //    Esta lista será usada para a verificação de 'aprovado_classificado'.
-        $stmt_todas_avaliacoes = $pdo->prepare("SELECT parecer FROM avaliacoes WHERE id_video = :id_video");
-        $stmt_todas_avaliacoes->execute([':id_video' => $id_video]);
-        $lista_pareceres_video = $stmt_todas_avaliacoes->fetchAll(PDO::FETCH_COLUMN);
+            // 2. OBTER INFORMAÇÕES DO VÍDEO E NÚMERO DE AVALIAÇÕES (APÓS A NOVA INSERÇÃO)
+            $stmt_info_video = $pdo->prepare(
+                "SELECT status, (SELECT COUNT(*) FROM avaliacoes WHERE id_video = v.id) as num_avaliacoes 
+                 FROM videos v WHERE v.id = :id_video"
+            );
+            // Lembre-se que $id_video aqui é o ID do vídeo que está sendo avaliado (vindo do POST)
+            $stmt_info_video->execute([':id_video' => $id_video]); 
+            $video_info_atual = $stmt_info_video->fetch(PDO::FETCH_ASSOC);
 
-        // 2. Criar uma lista normalizada APENAS para facilitar a contagem da maioria.
-        $pareceres_normalizados = [];
-        foreach ($lista_pareceres_video as $p) {
-            if ($p === 'aprovado' || $p === 'aprovado_classificado') {
-                $pareceres_normalizados[] = 'aprovado_geral';
-            } else {
-                $pareceres_normalizados[] = $p;
-            }
-        }
+            $status_final_a_definir_no_video = null; // Resetar para esta avaliação
+            $_SESSION['info'] = ''; // Limpar mensagem de info da sessão
 
-        // 3. A REGRA UNIFICADA: Uma decisão só é tomada quando um parecer atinge 2 ou mais votos.
-        if ($num_avaliacoes_agora < 2) {
-            $_SESSION['info'] = "Avaliação inicial registrada. Aguardando mais avaliações.";
-        } else {
-            $contagem_pareceres = array_count_values($pareceres_normalizados);
-            $aprovados = $contagem_pareceres['aprovado_geral'] ?? 0;
-            $reprovados = $contagem_pareceres['reprovado'] ?? 0;
-            $correcoes = $contagem_pareceres['correcao'] ?? 0;
+            if ($video_info_atual) {
+                $status_video_antes_desta_logica = $video_info_atual['status'];
+                $num_avaliacoes_agora = $video_info_atual['num_avaliacoes'];
 
-            if ($aprovados >= 2) {
-                // DECISÃO POR APROVAÇÃO: Agora verificamos se devemos usar a badge azul.
-                // Usamos a lista de pareceres *originais* para esta verificação.
-                if (in_array('aprovado_classificado', $lista_pareceres_video)) {
-                    $status_final_a_definir_no_video = 'aprovado_classificado';
-                    // $_SESSION['info'] = "Decisão por maioria. Vídeo APROVADO E CLASSIFICADO para a etapa final!";
-                } else {
-                    $status_final_a_definir_no_video = 'aprovado';
-                    // $_SESSION['info'] = "Decisão por maioria de avaliações. Vídeo APROVADO.";
+                echo "<p>Debug Status Vídeo: Status Anterior='".htmlspecialchars($status_video_antes_desta_logica)."', Num Avaliações Agora=".$num_avaliacoes_agora."</p>";
+
+                // 3. LÓGICA DE DECISÃO PARA ATUALIZAR STATUS DO VÍDEO (Conforme seu código original)
+                if ($status_video_antes_desta_logica === 'reavaliar') {
+                    if ($num_avaliacoes_agora == 3) {
+                        $terceiro_parecer = $avaliacao['parecer'];
+                        if ($terceiro_parecer === 'aprovado' || $terceiro_parecer === 'aprovado_classificado') {
+                            $status_final_a_definir_no_video = 'aprovado';
+                            $_SESSION['info'] = "Reavaliação (3º parecer) concluída. Vídeo APROVADO.";
+                        } elseif ($terceiro_parecer === 'reprovado') {
+                            $status_final_a_definir_no_video = 'reprovado';
+                            $_SESSION['info'] = "Reavaliação (3º parecer) concluída. Vídeo REPROVADO.";
+                        } elseif ($terceiro_parecer === 'correcao') {
+                            $status_final_a_definir_no_video = 'correcao';
+                            $_SESSION['info'] = "Reavaliação (3º parecer) concluída. Vídeo enviado para CORREÇÃO.";
+                        } else {
+                            $status_final_a_definir_no_video = 'correcao'; 
+                            $_SESSION['info'] = "Reavaliação (3º parecer) com parecer não padrão (".htmlspecialchars($terceiro_parecer)."). Enviado para análise administrativa.";
+                        }
+                    }
+                } elseif ($num_avaliacoes_agora >= 2) {
+                    $stmt_todas_avaliacoes = $pdo->prepare("SELECT parecer FROM avaliacoes WHERE id_video = :id_video");
+                    $stmt_todas_avaliacoes->execute([':id_video' => $id_video]);
+                    $lista_pareceres_video = $stmt_todas_avaliacoes->fetchAll(PDO::FETCH_COLUMN);
+                    
+                    $pareceres_normalizados = [];
+                    foreach ($lista_pareceres_video as $p) {
+                        if ($p === 'aprovado' || $p === 'aprovado_classificado') $pareceres_normalizados[] = 'aprovado_geral';
+                        elseif ($p === 'reprovado') $pareceres_normalizados[] = 'reprovado_geral';
+                        else $pareceres_normalizados[] = $p; 
+                    }
+                    $pareceres_unicos_normalizados = array_unique($pareceres_normalizados);
+
+                    if (in_array('aprovado_geral', $pareceres_unicos_normalizados) && in_array('reprovado_geral', $pareceres_unicos_normalizados)) {
+                        $status_final_a_definir_no_video = 'reavaliar';
+                        $_SESSION['info'] = "Divergência de pareceres. Vídeo enviado para reavaliação.";
+                    } else {
+                        $contagem_parecer_atual = 0; 
+                        $parecer_atual_normalizado = (in_array($avaliacao['parecer'], ['aprovado', 'aprovado_classificado'])) ? 'aprovado_geral' : (($avaliacao['parecer'] === 'reprovado') ? 'reprovado_geral' : $avaliacao['parecer']);
+                        
+                        foreach($pareceres_normalizados as $p_norm) {
+                            if ($p_norm === $parecer_atual_normalizado) $contagem_parecer_atual++;
+                        }
+
+                        if ($contagem_parecer_atual >= 2) {
+                            if ($parecer_atual_normalizado === 'aprovado_geral') $status_final_a_definir_no_video = 'aprovado';
+                            elseif ($parecer_atual_normalizado === 'reprovado_geral') $status_final_a_definir_no_video = 'reprovado';
+                            elseif ($parecer_atual_normalizado === 'correcao') $status_final_a_definir_no_video = 'correcao';
+                            
+                            if ($status_final_a_definir_no_video && empty($_SESSION['info'])) { 
+                                $_SESSION['info'] = "Status do vídeo atualizado para " . htmlspecialchars($status_final_a_definir_no_video) . ".";
+                            }
+                        } elseif (empty($_SESSION['info'])) { 
+                            if (in_array('correcao', $pareceres_unicos_normalizados)) {
+                                $status_final_a_definir_no_video = 'correcao';
+                                $_SESSION['info'] = "Uma das avaliações sugere correção. Vídeo marcado para CORREÇÃO.";
+                            } else {
+                                $_SESSION['info'] = "Avaliações registradas. Sem divergência clara ou consenso imediato.";
+                            }
+                        }
+                    }
+                } else { 
+                    $_SESSION['info'] = "Avaliação registrada. Aguardando segunda avaliação.";
                 }
-            } elseif ($reprovados >= 2) {
-                $status_final_a_definir_no_video = 'reprovado';
-                // $_SESSION['info'] = "Decisão por maioria de avaliações. Vídeo REPROVADO.";
-            } elseif ($correcoes >= 2) {
-                $status_final_a_definir_no_video = 'correcao';
-                // $_SESSION['info'] = "Decisão por maioria de avaliações. Vídeo enviado para CORREÇÃO.";
+
+                // 4. ATUALIZAR O STATUS DO VÍDEO NO BANCO SE UM NOVO STATUS FOI DEFINIDO
+                if ($status_final_a_definir_no_video !== null) {
+                    echo "<p>Debug Status Vídeo: Tentando atualizar status para '".htmlspecialchars($status_final_a_definir_no_video)."'</p>";
+                    $stmt_update_status_video = $pdo->prepare("UPDATE videos SET status = :status WHERE id = :id_video");
+                    $stmt_update_status_video->execute([':status' => $status_final_a_definir_no_video, ':id_video' => $id_video]);
+                }
             } else {
-                // NENHUM parecer atingiu a maioria de 2 votos. Há divergência.
-                // $_SESSION['info'] = "Avaliações registradas, mas ainda há divergência. Aguardando nova avaliação para desempate.";
+                echo "<p style='color:orange; font-weight:bold;'>AVISO: Não foi possível obter informações do vídeo (ID: ".htmlspecialchars($id_video).") após a inserção da avaliação para atualizar o status.</p>";
             }
+
+            $pdo->commit();
+            echo "<p style='color:green; font-weight:bold;'>COMMIT da transação executado.</p>";
+            $_SESSION['success'] = "Avaliação enviada com sucesso! " . ($_SESSION['info'] ?? '');
+            // header("Location: index.php"); // MANTENHA COMENTADO POR ENQUANTO
+            // exit(); // MANTENHA COMENTADO POR ENQUANTO
+            echo "<p>Redirecionamento para 'index.php' com mensagem de sucesso seria executado aqui.</p>";
+
+        } else { // Se $linhas_afetadas_insert não for > 0
+            echo "<p style='color:red; font-weight:bold;'>NENHUMA LINHA FOI INSERIDA PELA AVALIAÇÃO. Algo deu errado com o INSERT, mas não lançou exceção.</p>";
+            echo "<p>Informações de erro do statement (se houver):</p><pre>";
+            print_r($stmt_insert_avaliacao->errorInfo());
+            echo "</pre>";
+            $pdo->rollBack(); 
+            echo "<p style='color:red; font-weight:bold;'>ROLLBACK da transação executado.</p>";
+            $_SESSION['error'] = "Falha ao registrar avaliação: nenhuma linha afetada. (Msg Debug)";
         }
-
-        // 4. Atualizar o status no banco de dados APENAS se um novo status foi definido.
-        if ($status_final_a_definir_no_video !== null) {
-            $stmt_update_status_video = $pdo->prepare("UPDATE videos SET status = :status WHERE id = :id_video");
-            $stmt_update_status_video->execute([':status' => $status_final_a_definir_no_video, ':id_video' => $id_video]);
-        }
-
-        // -- FIM DA LÓGICA DE DECISÃO --
-
-        $pdo->commit();
-        $_SESSION['success'] = "Avaliação enviada com sucesso! " . ($_SESSION['info'] ?? '');
-        unset($_SESSION['info']);
-        header("Location: index.php");
-        exit();
+        echo "</div>"; // Fim da caixa de debug
+        die(); // PARE O SCRIPT AQUI PARA VER A SAÍDA DESTE DEBUG CLARAMENTE
 
     } catch (PDOException $e) {
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        // Use um log de erros para o desenvolvedor e uma mensagem amigável para o usuário.
-        error_log("Erro no banco de dados ao salvar avaliação: " . $e->getMessage());
-        $_SESSION['error'] = "Ocorreu um erro ao processar sua avaliação. Por favor, tente novamente.";
-        header("Location: index.php");
-        exit();
-    }
-}
-
-// VERIFICAÇÃO DE LIMITE AO TENTAR ABRIR UM VÍDEO (GET)
-$video_atual = null;
-if (isset($_GET['avaliar'])) { //
-    $video_id_para_avaliar = intval($_GET['avaliar']); //
-    
-    $stmt_video_info_get = $pdo->prepare("SELECT * FROM videos WHERE id = :id"); //
-    $stmt_video_info_get->execute(['id' => $video_id_para_avaliar]);
-    $video_atual_get = $stmt_video_info_get->fetch(PDO::FETCH_ASSOC); //
-
-    if ($video_atual_get) { //
-        $video_category_name_get = $video_atual_get['categoria']; //
+        $pdo->rollBack(); 
+        $_SESSION['error'] = "Erro PDO ao enviar avaliação: " . $e->getMessage();
         
-        // Normaliza o nome da categoria do vídeo para sua CHAVE NOVA correspondente
-        $video_category_key_get = array_search($video_category_name_get, $mapa_categorias); // Procura no mapa de nomes NOVOS
-        if ($video_category_key_get === false) {
-            // Tenta encontrar a CHAVE NOVA correspondente ao NOME ANTIGO do vídeo
-             $nome_novo_equivalente_para_video_antigo_get = array_search($video_category_name_get, $mapa_nomes_novos_para_antigos_sql);
-            if($nome_novo_equivalente_para_video_antigo_get !== false) {
-                 $video_category_key_get = array_search($nome_novo_equivalente_para_video_antigo_get, $mapa_categorias);
-            }
-        }
-
-
-        if ($video_category_key_get !== false && in_array($video_category_key_get, $categorias_atribuidas_chaves)) { //
-            $quota_para_categoria_get = $user_quotas_por_categoria[$video_category_key_get] ?? null; //
-            $contagem_na_categoria_get = $user_eval_counts_por_categoria_chave[$video_category_key_get] ?? 0; //
-
-            if ($quota_para_categoria_get !== null && $contagem_na_categoria_get >= $quota_para_categoria_get) { //
-                $_SESSION['error'] = "Você atingiu o limite de ".htmlspecialchars($quota_para_categoria_get)." avaliações para a categoria '".htmlspecialchars($mapa_categorias[$video_category_key_get])."'."; // Exibe o nome novo
-                header('Location: index.php');
-                exit();
-            } else {
-                $video_atual = $video_atual_get; //
-            }
-        } else {
-            $_SESSION['error'] = "Vídeo de categoria não permitida ou inválida para avaliação."; //
-            header('Location: index.php');
-            exit();
-        }
-    } else {
-        $_SESSION['error'] = "Vídeo (ID: ".htmlspecialchars($video_id_para_avaliar).") não encontrado para avaliação."; //
-        header('Location: index.php');
-        exit();
+        // Saída de erro para depuração
+        echo "<div style='border:2px solid red; padding:10px; margin-top:20px; background-color: #ffe0e0;'>";
+        echo "<h4 style='color:red;'>DEBUG: ERRO PDO NO TRY-CATCH:</h4>";
+        echo "<p>Mensagem: " . htmlspecialchars($e->getMessage()) . "</p>";
+        echo "</div>";
+        // header("Location: index.php"); // MANTENHA COMENTADO POR ENQUANTO
+        // exit(); // MANTENHA COMENTADO POR ENQUANTO
+        die(); // PARE O SCRIPT AQUI PARA VER O ERRO PDO CLARAMENTE
     }
 }
-/*
-function extrairIdYouTube($url) { // extractYoutubeId
+
+function extrairIdYouTube($url) { //
     $padrao = '%
         (?:youtu\.be/|youtube\.com/
         (?:embed/|v/|watch\?v=|watch\?.+&v=))
@@ -512,7 +492,6 @@ function extrairIdYouTube($url) { // extractYoutubeId
     }
     return null; // Retorna null se não encontrar
 }
-*/
 
 ?>
 
@@ -523,7 +502,6 @@ function extrairIdYouTube($url) { // extractYoutubeId
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Painel do Avaliador - Festival de Vídeos</title>
-    <link rel="icon" href="../img/logo_200x200.png" type="image/png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
@@ -573,18 +551,17 @@ function extrairIdYouTube($url) { // extractYoutubeId
 <div class="content-wrapper">
     <div class="container-fluid flex-grow-1 mt-0">
         <div class="row">
-            <nav class="col-md-2 d-none d-md-block header-custom-light-purple sidebar">
+            <nav class="col-md-2 d-none d-md-block bg-light sidebar">
                 <div class="sidebar-sticky">
                     <ul class="nav flex-column">
                         <ul class="nav flex-column">
                         <li class="nav-item">
                             <a class="nav-link active" href="index.php">
-                                <i class="fas fa-home mr-2"></i> Atualizar vídeo
+                                <i class="fas fa-home mr-2"></i> Dashboard
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a href="../Regulamento_FVDEM_2025.pdf" class="btn btn-outline-danger" target="_blank">
-                                <i class="bi bi-file-earmark-pdf-fill"></i> Regulamento FVDEM 2025 (PDF)
+                            <a class="nav-link" href="#"> <i class="fas fa-video mr-2"></i> Atualizar Vídeo
                             </a>
                     </ul>
                 </div>
@@ -663,10 +640,9 @@ function extrairIdYouTube($url) { // extractYoutubeId
                                 }
                                 ?>
 
-<iframe width="420" height="315"
-    src="https://www.youtube.com/embed/<?= extractYoutubeId($video_atual['link_youtube']) ?>"
-    frameborder="0" allowfullscreen>
-</iframe>
+                                <iframe width="420" height="315"
+                                    src="<?= htmlspecialchars(convertToEmbedUrl($video_atual['link_youtube'])) ?>">
+                                </iframe>
 
                             </div>
 
@@ -941,7 +917,7 @@ function convertYouTubeDuration(duration) {
     const hours = (parseInt(match[1]) || 0);
     const minutes = (parseInt(match[2]) || 0);
     const seconds = (parseInt(match[3]) || 0);
-    return hours * 3600 + minutes * 60 + seconds - 2; // para ter 2 segundos de folga, assim como a Amanda pediu
+    return hours * 3600 + minutes * 60 + seconds;
 }
 
 // Função principal que verifica a duração do vídeo do YouTube
@@ -989,7 +965,7 @@ async function checkVideoDuration(videoId, apiKey) {
 }
 
 // Obtém o ID do vídeo e a chave da API do PHP (apenas se $video_atual estiver definido)
-const videoIdForDurationCheck = '<?= isset($video_atual) && $video_atual && isset($video_atual['link_youtube']) ? extractYoutubeId($video_atual['link_youtube']) : "" ?>';
+const videoIdForDurationCheck = '<?= isset($video_atual) && $video_atual && isset($video_atual['link_youtube']) ? extrairIdYouTube($video_atual['link_youtube']) : "" ?>';
 const apiKeyForDurationCheck = '<?= $apikey_youtube ?? "" ?>'; // Garante que $apikey_youtube esteja definida no PHP
 
 document.addEventListener('DOMContentLoaded', function() {

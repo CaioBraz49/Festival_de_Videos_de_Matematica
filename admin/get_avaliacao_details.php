@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['video_id']) && isset(
 
     // Função para formatar campos booleanos
     function formatBoolean($value) {
-        return $value ? '<span class="badge badge-success">Sim</span>' : '<span class="badge badge-danger">Não</span>';
+        return $value ? '<span class="badge bg-success">Sim</span>' : '<span class="badge bg-danger">Não</span>';
     }
 
     // Exibe os detalhes da avaliação
@@ -115,4 +115,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['video_id']) && isset(
     
     echo '</div>';
 }
+
 ?>

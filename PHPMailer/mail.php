@@ -78,6 +78,7 @@ if ($env === false) {
     die('Erro: Falha ao analisar o arquivo .env (formato inválido)');
 }
 
+// Configuração segura para carregar Variáveis de Ambiente .env
 $requiredVars = ['FEST_GMAIL_USER', 'FEST_GMAIL_PASS', 'FEST_GMAIL_EMAIL_FROM', 'FEST_GMAIL_NAME_FROM'];
 foreach ($requiredVars as $var) {
     if (!isset($env[$var])) {
@@ -136,23 +137,35 @@ try {
     $mail->AltBody = strip_tags($mensagem);
 
     $mail->send();
-    //echo 'Email enviado com sucesso! '.$url_retorno;
-    // Redireciona para a URL de retorno 'https://sicalis.com.br/festival/avaliador/index.php'
+	
+
+    // RECUPERAÇÃO DE SENHA - Redireciona para a URL de retorno com sucesso
+    if (isset($_POST['email_recuperacao'])) {
+        $_SESSION['success'] = "Instruções enviada com sucesso para o email";
+        header("Location: ../avaliador/index.php");
+        exit;
+    }	
+	
+    // Redireciona para a URL de retorno com sucesso
     if ($url_retorno == '../avaliador/index.php') {
         $_SESSION['success'] = "Email enviado com sucesso!";
-        header("Location: ../avaliador/index.php");
+        header("Location: ../index.php");
         exit;
     }
 
 } catch (Exception $e) {
     error_log('Erro ao enviar email: ' . $e->getMessage());
     echo 'Ocorreu um erro ao enviar o email. Tente novamente mais tarde.';
-    // Redireciona para a URL de retorno
+    // Redireciona para a URL de retorno com erro
     if ($url_retorno == '../avaliador/index.php') {
         $_SESSION['error'] = "Erro ao enviar email";
         header("Location: ../avaliador/index.php");
         exit;
     }
+	
+	// Quando tudo falhar
+        header("Location: ../index.php");
+        exit;
 
 }
 ?>

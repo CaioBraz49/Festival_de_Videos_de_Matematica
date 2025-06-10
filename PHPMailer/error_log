@@ -3,3 +3,49 @@
 [01-Jun-2025 23:43:20 UTC] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home/sicalis/public_html/festival/PHPMailer/mail.php:139) in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 143
 [01-Jun-2025 23:44:56 UTC] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home/sicalis/public_html/festival/PHPMailer/mail.php:139) in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 143
 [01-Jun-2025 23:51:38 UTC] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home/sicalis/public_html/festival/PHPMailer/mail.php:139) in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 143
+[09-Jun-2025 21:30:19 UTC] Erro ao enviar email: SMTP Error: Could not authenticate.
+[09-Jun-2025 21:30:19 UTC] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home/sicalis/public_html/festival/PHPMailer/mail.php:158) in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 162
+[09-Jun-2025 21:33:29 UTC] Erro ao enviar email: SMTP Error: Could not authenticate.
+[09-Jun-2025 21:33:29 UTC] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home/sicalis/public_html/festival/PHPMailer/mail.php:158) in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 162
+[09-Jun-2025 21:41:10 UTC] Erro ao enviar email: SMTP Error: Could not authenticate.
+[09-Jun-2025 21:41:10 UTC] PHP Warning:  Undefined variable $url_retorno in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 160
+[09-Jun-2025 21:41:10 UTC] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home/sicalis/public_html/festival/PHPMailer/mail.php:158) in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 167
+[09-Jun-2025 21:41:52 UTC] Erro ao enviar email: SMTP Error: Could not authenticate.
+[09-Jun-2025 21:41:52 UTC] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home/sicalis/public_html/festival/PHPMailer/mail.php:158) in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 167
+[09-Jun-2025 21:48:28 UTC] PHP Warning:  Trying to access array offset on value of type bool in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 28
+[09-Jun-2025 21:48:28 UTC] PHP Warning:  Trying to access array offset on value of type bool in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 30
+[09-Jun-2025 21:48:28 UTC] PHP Warning:  Trying to access array offset on value of type bool in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 31
+[09-Jun-2025 21:48:31 UTC] Erro ao enviar email: SMTP Error: Could not authenticate.
+[09-Jun-2025 21:48:31 UTC] PHP Warning:  Undefined variable $url_retorno in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 160
+[09-Jun-2025 21:48:31 UTC] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home/sicalis/public_html/festival/PHPMailer/mail.php:158) in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 167
+[09-Jun-2025 21:48:43 UTC] PHP Warning:  Trying to access array offset on value of type bool in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 28
+[09-Jun-2025 21:48:43 UTC] PHP Warning:  Trying to access array offset on value of type bool in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 30
+[09-Jun-2025 21:48:43 UTC] PHP Warning:  Trying to access array offset on value of type bool in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 31
+[09-Jun-2025 21:48:45 UTC] Erro ao enviar email: SMTP Error: Could not authenticate.
+[09-Jun-2025 21:48:45 UTC] PHP Warning:  Undefined variable $url_retorno in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 160
+[09-Jun-2025 21:48:45 UTC] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home/sicalis/public_html/festival/PHPMailer/mail.php:158) in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 167
+[09-Jun-2025 22:08:13 UTC] PHP Warning:  Trying to access array offset on value of type bool in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 28
+[09-Jun-2025 22:08:13 UTC] PHP Warning:  Trying to access array offset on value of type bool in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 30
+[09-Jun-2025 22:08:13 UTC] PHP Warning:  Trying to access array offset on value of type bool in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 31
+[09-Jun-2025 22:08:16 UTC] Erro ao enviar email: SMTP Error: Could not authenticate.
+[09-Jun-2025 22:08:16 UTC] PHP Warning:  Undefined variable $url_retorno in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 160
+[09-Jun-2025 22:08:16 UTC] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home/sicalis/public_html/festival/PHPMailer/mail.php:158) in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 167
+[09-Jun-2025 22:08:18 UTC] PHP Warning:  Trying to access array offset on value of type bool in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 28
+[09-Jun-2025 22:08:18 UTC] PHP Warning:  Trying to access array offset on value of type bool in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 30
+[09-Jun-2025 22:08:18 UTC] PHP Warning:  Trying to access array offset on value of type bool in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 31
+[09-Jun-2025 22:08:21 UTC] Erro ao enviar email: SMTP Error: Could not authenticate.
+[09-Jun-2025 22:08:21 UTC] PHP Warning:  Undefined variable $url_retorno in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 160
+[09-Jun-2025 22:08:21 UTC] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home/sicalis/public_html/festival/PHPMailer/mail.php:158) in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 167
+[09-Jun-2025 22:10:00 UTC] PHP Warning:  Trying to access array offset on value of type bool in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 28
+[09-Jun-2025 22:10:01 UTC] PHP Warning:  Trying to access array offset on value of type bool in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 30
+[09-Jun-2025 22:10:01 UTC] PHP Warning:  Trying to access array offset on value of type bool in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 31
+[09-Jun-2025 22:10:03 UTC] Erro ao enviar email: SMTP Error: Could not authenticate.
+[09-Jun-2025 22:10:03 UTC] PHP Warning:  Undefined variable $url_retorno in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 160
+[09-Jun-2025 22:10:03 UTC] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home/sicalis/public_html/festival/PHPMailer/mail.php:158) in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 167
+[09-Jun-2025 22:15:45 UTC] Erro ao enviar email: SMTP Error: Could not authenticate.
+[09-Jun-2025 22:15:45 UTC] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home/sicalis/public_html/festival/PHPMailer/mail.php:158) in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 162
+[09-Jun-2025 22:17:28 UTC] Erro ao enviar email: SMTP Error: Could not authenticate.
+[09-Jun-2025 22:24:55 UTC] Erro ao enviar email: SMTP Error: Could not authenticate.
+[09-Jun-2025 22:28:28 UTC] Erro ao enviar email: SMTP Error: Could not authenticate.
+[10-Jun-2025 01:18:41 UTC] Erro ao enviar email: SMTP Error: Could not authenticate.
+[10-Jun-2025 01:18:41 UTC] PHP Warning:  Cannot modify header information - headers already sent by (output started at /home/sicalis/public_html/festival/PHPMailer/mail.php:158) in /home/sicalis/public_html/festival/PHPMailer/mail.php on line 162
